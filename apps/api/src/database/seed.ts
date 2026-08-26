@@ -38,6 +38,14 @@ import {
 const DEMO_PASSWORD = "Password@123";
 
 export async function runSeedIfEmpty(app: INestApplicationContext) {
+  // Demo data must never be able to fire against a real deployment, regardless of
+  // whether an empty-DB check would otherwise pass — this is the only guard
+  // standing between a fresh production database and it silently filling up with
+  // "Asha Verma" / Password@123 accounts.
+  if (process.env.NODE_ENV === "production") {
+    console.log("Seed skipped: NODE_ENV=production (demo seed data never runs in production).");
+    return;
+  }
   const dataSource = app.get(DataSource);
   const userCount = await dataSource.getRepository(UserEntity).count();
   if (userCount > 0) {
@@ -579,6 +587,10 @@ async function seed(dataSource: DataSource) {
 // Allow `pnpm seed` to run this file standalone via ts-node.
 if (require.main === module) {
   (async () => {
+    if (process.env.NODE_ENV === "production") {
+      console.log("Seed skipped: NODE_ENV=production (demo seed data never runs in production).");
+      return;
+    }
     const { AppModule } = await import("../app.module");
     const app = await NestFactory.createApplicationContext(AppModule);
     const dataSource = app.get(DataSource);

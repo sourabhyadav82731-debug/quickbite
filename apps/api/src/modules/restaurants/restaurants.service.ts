@@ -26,7 +26,12 @@ export class RestaurantsService {
   async list(search?: string) {
     const qb = this.restaurants.createQueryBuilder("r");
     if (search) {
-      qb.where("r.name LIKE :s OR r.cuisines LIKE :s", { s: `%${search}%` });
+      // LOWER(...) LIKE on both sides (rather than ILIKE) so this stays portable:
+      // SQLite has no ILIKE operator at all, while plain LIKE is case-sensitive on
+      // Postgres but not on SQLite — this normalizes both to the same behavior.
+      qb.where("LOWER(r.name) LIKE LOWER(:s) OR LOWER(r.cuisines) LIKE LOWER(:s)", {
+        s: `%${search}%`,
+      });
     }
     return qb.orderBy("r.rating", "DESC").getMany();
   }
