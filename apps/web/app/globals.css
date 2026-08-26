@@ -1,0 +1,104 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* ---------- Per-portal theme scoping ---------- */
+/* Never define portal colors at :root — each route-group layout stamps
+   data-portal on its wrapper div, and these blocks stay scoped to it. */
+
+[data-portal="customer"] {
+  --portal-primary: #ff6b35;
+  --portal-secondary: #ffb534;
+  --portal-bg: #fff8f3;
+  --portal-fg: #201406;
+  --portal-card: rgba(255, 255, 255, 0.65);
+  --portal-border: rgba(255, 107, 53, 0.18);
+}
+[data-portal="customer"][data-mode="dark"] {
+  --portal-bg: #1a120b;
+  --portal-fg: #fff3ea;
+  --portal-card: rgba(40, 26, 16, 0.6);
+  --portal-border: rgba(255, 181, 52, 0.2);
+}
+
+[data-portal="restaurant"] {
+  --portal-primary: #00b894;
+  --portal-secondary: #55efc4;
+  --portal-bg: #f2fbf8;
+  --portal-fg: #05261e;
+  --portal-card: rgba(255, 255, 255, 0.65);
+  --portal-border: rgba(0, 184, 148, 0.18);
+}
+[data-portal="restaurant"][data-mode="dark"] {
+  --portal-bg: #071a15;
+  --portal-fg: #eafff8;
+  --portal-card: rgba(10, 40, 32, 0.6);
+  --portal-border: rgba(85, 239, 196, 0.2);
+}
+
+[data-portal="delivery"] {
+  --portal-primary: #0984e3;
+  --portal-secondary: #2e86ff;
+  --portal-bg: #f1f8ff;
+  --portal-fg: #05203a;
+  --portal-card: rgba(255, 255, 255, 0.65);
+  --portal-border: rgba(9, 132, 227, 0.18);
+}
+[data-portal="delivery"][data-mode="dark"] {
+  --portal-bg: #07152a;
+  --portal-fg: #eaf4ff;
+  --portal-card: rgba(10, 28, 48, 0.6);
+  --portal-border: rgba(46, 134, 255, 0.2);
+}
+
+[data-portal="admin"] {
+  --portal-primary: #6c5ce7;
+  --portal-secondary: #4834d4;
+  --portal-bg: #f6f4ff;
+  --portal-fg: #1a1533;
+  --portal-card: rgba(255, 255, 255, 0.65);
+  --portal-border: rgba(108, 92, 231, 0.18);
+}
+[data-portal="admin"][data-mode="dark"] {
+  --portal-bg: #100c22;
+  --portal-fg: #f3f1ff;
+  --portal-card: rgba(24, 18, 46, 0.6);
+  --portal-border: rgba(108, 92, 231, 0.25);
+}
+
+.portal-shell {
+  min-height: 100vh;
+  background: var(--portal-bg);
+  color: var(--portal-fg);
+}
+
+.glass-card {
+  background: var(--portal-card);
+  border: 1px solid var(--portal-border);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-radius: 1rem;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.06);
+}
+
+.portal-btn-primary {
+  background: linear-gradient(135deg, var(--portal-primary), var(--portal-secondary));
+  color: white;
+  font-weight: 600;
+  border-radius: 0.75rem;
+}

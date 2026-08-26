@@ -1,0 +1,18 @@
+{
+  "name": "quickbite",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,magenta \"pnpm --filter @quickbite/api start:dev\" \"pnpm --filter @quickbite/web dev\"",
+    "seed": "pnpm --filter @quickbite/api run seed",
+    "build": "pnpm --filter @quickbite/api build && pnpm --filter @quickbite/web build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "typescript": "^5.5.4"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@11.22.0"
+}
