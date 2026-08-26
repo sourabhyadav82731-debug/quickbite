@@ -1,3 +1,5 @@
+import * as fs from "fs";
+import * as path from "path";
 import { DataSourceOptions } from "typeorm";
 import { ALL_ENTITIES } from "./entities";
 import { ALL_MIGRATIONS } from "./migrations";
@@ -22,6 +24,19 @@ export interface DbEnv {
   // certificate isn't already covered by Node's built-in trust store.
   DB_SSL_CA?: string;
   NODE_ENV?: string;
+}
+
+/** DB_SSL_CA may be either inline PEM content or a path to a .crt/.pem file
+ *  (resolved relative to apps/api — this file lives in apps/api/src/database, two
+ *  levels down). Providers like Supabase distribute their root CA as a downloadable
+ *  file, not as an env-var-sized blob, so both forms need to work. */
+function resolveCaCertificate(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.startsWith("-----BEGIN CERTIFICATE-----")) {
+    return trimmed;
+  }
+  const resolvedPath = path.resolve(__dirname, "../..", trimmed);
+  return fs.readFileSync(resolvedPath, "utf8");
 }
 
 /** Single source of truth for TypeORM connection config, shared by the NestJS
@@ -55,7 +70,10 @@ export function buildDataSourceOptions(env: DbEnv): DataSourceOptions {
       migrations: ALL_MIGRATIONS,
       synchronize,
       ssl: sslEnabled
-        ? { rejectUnauthorized, ca: env.DB_SSL_CA || undefined }
+        ? {
+            rejectUnauthorized,
+            ca: env.DB_SSL_CA ? resolveCaCertificate(env.DB_SSL_CA) : undefined,
+          }
         : false,
       // gen_random_uuid() has been a Postgres core built-in since v13 — no
       // extension needed. Using the "uuid-ossp" default instead would require the
