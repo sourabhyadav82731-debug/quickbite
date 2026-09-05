@@ -78,7 +78,14 @@ export class AuthService {
       .getOne();
 
     if (!user || !(await bcrypt.compare(input.password, user.passwordHash))) {
-      throw new UnauthorizedException("Invalid credentials");
+      // Same message whether the email doesn't exist or the password is
+      // wrong — never reveals which one it was.
+      throw new UnauthorizedException("Invalid email or password.");
+    }
+    if (!user.isActive) {
+      throw new UnauthorizedException(
+        "This account has been suspended. Contact support for help.",
+      );
     }
     const tokens = await this.issueTokens(user);
     return { ...tokens, user: this.sanitize(user) };
@@ -104,6 +111,9 @@ export class AuthService {
       !(await bcrypt.compare(refreshToken, user.refreshTokenHash))
     ) {
       throw new UnauthorizedException("Refresh token no longer valid");
+    }
+    if (!user.isActive) {
+      throw new UnauthorizedException("This account has been suspended.");
     }
     return this.issueTokens(user);
   }

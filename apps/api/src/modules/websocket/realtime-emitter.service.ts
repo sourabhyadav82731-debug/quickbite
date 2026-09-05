@@ -25,6 +25,10 @@ export class RealtimeEmitterService {
     this.deliveryGateway.emitOffer(driverId, offer);
   }
 
+  deliveryOfferClosed(driverId: string, deliveryId: string) {
+    this.deliveryGateway.emitOfferClosed(driverId, deliveryId);
+  }
+
   deliveryAssigned(orderId: string, delivery: any) {
     this.deliveryGateway.emitAssigned(orderId, delivery);
   }

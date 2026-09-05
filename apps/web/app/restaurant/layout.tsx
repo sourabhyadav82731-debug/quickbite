@@ -7,17 +7,18 @@ import { RestaurantProvider, useRestaurant } from "@/lib/restaurant-context";
 import { apiClient } from "@/lib/api";
 
 const NAV = [
-  { href: "/restaurant", label: "Dashboard" },
-  { href: "/restaurant/kitchen", label: "Kitchen" },
-  { href: "/restaurant/orders", label: "Orders" },
-  { href: "/restaurant/menu", label: "Menu" },
-  { href: "/restaurant/hours", label: "Hours" },
-  { href: "/restaurant/reviews", label: "Reviews" },
-  { href: "/restaurant/offers", label: "Offers" },
-  { href: "/restaurant/finance", label: "Finance" },
-  { href: "/restaurant/staff", label: "Staff" },
-  { href: "/restaurant/assistant", label: "AI Copilot" },
-  { href: "/restaurant/support", label: "Support" },
+  { href: "/restaurant", label: "Dashboard", icon: "🏠" },
+  { href: "/restaurant/orders", label: "Orders", icon: "📋" },
+  { href: "/restaurant/kitchen", label: "Kitchen", icon: "🍳" },
+  { href: "/restaurant/menu", label: "Menu", icon: "📖" },
+  { href: "/restaurant/menu/categories", label: "Categories", icon: "📂" },
+  { href: "/restaurant/offers", label: "Offers & Coupons", icon: "🏷️" },
+  { href: "/restaurant/reviews", label: "Reviews", icon: "⭐" },
+  { href: "/restaurant/staff", label: "Staff", icon: "👥" },
+  { href: "/restaurant/hours", label: "Hours & Holidays", icon: "🕒" },
+  { href: "/restaurant/finance", label: "Settlements", icon: "💰" },
+  { href: "/restaurant/photos", label: "Restaurant Photos", icon: "📷" },
+  { href: "/restaurant/profile", label: "Settings", icon: "⚙️" },
 ];
 
 function OutletSwitcher() {
@@ -40,7 +41,7 @@ function OutletSwitcher() {
         <select
           value={activeId ?? ""}
           onChange={(e) => setActiveId(e.target.value)}
-          className="text-xs px-2 py-1.5 rounded-lg glass-card"
+          className="text-xs px-2 py-1.5 rounded-lg d3-card"
         >
           {restaurants.map((r) => (
             <option key={r.id} value={r.id}>
@@ -51,9 +52,10 @@ function OutletSwitcher() {
       )}
       <button
         onClick={toggleAccepting}
-        className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
-        style={{ background: active.isAcceptingOrders ? "#00B894" : "#95a5a6" }}
+        className="d3-btn px-3.5 py-1.5 rounded-xl text-xs font-semibold text-white flex items-center gap-1.5"
+        style={{ background: active.isAcceptingOrders ? "linear-gradient(135deg,#00b894,#00d9a3)" : "#95a5a6" }}
       >
+        <span className={`w-2 h-2 rounded-full bg-white ${active.isAcceptingOrders ? "d3-pulse" : ""}`} />
         {active.isAcceptingOrders ? "Accepting Orders" : "Store Closed"}
       </button>
     </div>
@@ -64,7 +66,7 @@ function LayoutInner({ children }: { children: ReactNode }) {
   return (
     <PortalChrome
       portal="restaurant"
-      title="🍽️ QuickBite Partner"
+      title="🍽️ Quickbits Partner"
       navLinks={NAV}
       extraHeader={<OutletSwitcher />}
     >

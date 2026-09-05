@@ -17,6 +17,7 @@ import { validatePaymentVerification } from "razorpay/dist/utils/razorpay-utils"
 import { OrderStatus, PaymentStatus, UserRole } from "@quickbite/types";
 import { CouponEntity, OrderEntity, PaymentEntity } from "../../database/entities";
 import { RealtimeEmitterService } from "../websocket/realtime-emitter.service";
+import { OrderHistoryService } from "../order-history/order-history.service";
 import { RAZORPAY_CLIENT } from "./razorpay.provider";
 
 @Injectable()
@@ -30,6 +31,7 @@ export class PaymentsService {
     @Inject(RAZORPAY_CLIENT) private readonly razorpay: Razorpay | undefined,
     private readonly config: ConfigService,
     private readonly realtime: RealtimeEmitterService,
+    private readonly orderHistory: OrderHistoryService,
   ) {}
 
   /** Server-only. Never called with a client-supplied amount — callers pass the
@@ -68,6 +70,50 @@ export class PaymentsService {
         "Unable to initiate online payment right now. Please try again or choose Cash on Delivery.",
       );
     }
+  }
+
+  /** Server-only, called from RefundsService once an admin has approved a refund.
+   *  For an online payment (razorpayPaymentId set) this reverses real money via
+   *  Razorpay's refund API — never simulated. For COD there is no gateway
+   *  transaction to reverse, so this only updates local records and returns no
+   *  razorpayRefundId; the caller is responsible for recording how the cash was
+   *  actually returned to the customer. */
+  async refundPayment(
+    orderId: string,
+    amountPaise: number,
+  ): Promise<{ razorpayRefundId?: string }> {
+    const payment = await this.payments.findOne({ where: { orderId } });
+    if (!payment) throw new NotFoundException("Payment not found for this order");
+    if (payment.status !== PaymentStatus.SUCCEEDED) {
+      throw new BadRequestException(
+        `Cannot refund a payment in ${payment.status} status`,
+      );
+    }
+
+    let razorpayRefundId: string | undefined;
+    if (payment.razorpayPaymentId) {
+      if (!this.razorpay) {
+        throw new ServiceUnavailableException(
+          "Online refunds are temporarily unavailable — Razorpay is not configured.",
+        );
+      }
+      try {
+        const refund = await this.razorpay.payments.refund(payment.razorpayPaymentId, {
+          amount: amountPaise,
+        });
+        razorpayRefundId = refund.id;
+      } catch (err) {
+        this.logger.error(
+          `Razorpay refund failed for order ${orderId}: ${err instanceof Error ? err.message : "unknown error"}`,
+        );
+        throw new ServiceUnavailableException("Refund failed at the payment gateway. Please try again.");
+      }
+    }
+    // COD (no razorpayPaymentId): nothing to call at a gateway — the cash was
+    // never routed through Razorpay in the first place.
+
+    await this.payments.update({ id: payment.id }, { status: PaymentStatus.REFUNDED });
+    return { razorpayRefundId };
   }
 
   async getForOrder(orderId: string, actor: { userId: string; role: UserRole }) {
@@ -226,6 +272,14 @@ export class PaymentsService {
     if (fullOrder.couponId) {
       await this.coupons.increment({ id: fullOrder.couponId }, "timesUsed", 1);
     }
+
+    await this.orderHistory.record(
+      orderId,
+      OrderStatus.PLACED,
+      "SYSTEM",
+      undefined,
+      "Payment captured via Razorpay",
+    );
 
     this.realtime.orderCreated(fullOrder);
   }

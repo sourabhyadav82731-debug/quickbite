@@ -24,6 +24,13 @@ export class DishEntity extends BaseEntity {
   @Column({ type: "float", nullable: true })
   discountPrice?: number;
 
+  // Customer-facing selling price. Separate from `price` (the restaurant's own
+  // base/cost price, which they enter and see, untouched by this). Null until
+  // explicitly configured (admin-only) — the effective price customers pay falls
+  // back to `discountPrice ?? price` until then, so existing dishes are unaffected.
+  @Column({ type: "float", nullable: true })
+  customerPrice?: number;
+
   @Column({ nullable: true })
   imageUrl?: string;
 

@@ -18,10 +18,31 @@ export class DeliveryController {
 
   // Accessible to any authenticated role so customers can track their order
   // and admins can inspect a delivery; overrides the class-level role guard.
+  // pickupOtp is always redacted; dropOtp is redacted for everyone except
+  // the customer themselves — see getByOrderIdEnriched.
   @Roles(UserRole.CUSTOMER, UserRole.ADMIN, UserRole.RESTAURANT_OWNER, UserRole.DELIVERY_PARTNER)
   @Get("deliveries/order/:orderId")
-  byOrder(@Param("orderId") orderId: string) {
-    return this.delivery.getByOrderIdEnriched(orderId);
+  byOrder(@Param("orderId") orderId: string, @CurrentUser() user: AuthUser) {
+    return this.delivery.getByOrderIdEnriched(orderId, user as any);
+  }
+
+  // Restaurant dashboard's "Active Deliveries" — ownership-checked in the
+  // service (restaurantId is caller-supplied).
+  @Roles(UserRole.RESTAURANT_OWNER, UserRole.ADMIN)
+  @Get("deliveries/restaurant/:restaurantId/active")
+  activeForRestaurant(
+    @Param("restaurantId") restaurantId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.delivery.listActiveForRestaurant(restaurantId, user as any);
+  }
+
+  // Restaurant/admin-only — the sole path that ever returns the real pickup
+  // OTP value. Idempotent: returns the existing OTP if one was already issued.
+  @Roles(UserRole.RESTAURANT_OWNER, UserRole.ADMIN)
+  @Post("deliveries/order/:orderId/pickup-otp")
+  generatePickupOtp(@Param("orderId") orderId: string, @CurrentUser() user: AuthUser) {
+    return this.delivery.getPickupOtpForOrder(orderId, user as any);
   }
 
   @Get("deliveries/active")

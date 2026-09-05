@@ -1,9 +1,11 @@
+import * as fs from "fs";
 import { NestFactory } from "@nestjs/core";
 import { NestExpressApplication } from "@nestjs/platform-express";
 import { ConfigService } from "@nestjs/config";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
 import { runSeedIfEmpty } from "./database/seed";
+import { UPLOADS_ROOT } from "./modules/uploads/uploads.service";
 
 async function bootstrap() {
   // rawBody:true preserves req.rawBody (a Buffer) on every request alongside the
@@ -16,6 +18,11 @@ async function bootstrap() {
     origin: config.get<string>("CORS_ORIGIN", "http://localhost:3001"),
     credentials: true,
   });
+
+  // Restaurant/dish photo uploads (UploadsModule) — served back out from the
+  // same disk location multer writes them to.
+  fs.mkdirSync(UPLOADS_ROOT, { recursive: true });
+  app.useStaticAssets(UPLOADS_ROOT, { prefix: "/uploads" });
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle("QuickBite API")

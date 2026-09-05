@@ -34,21 +34,23 @@ export default function CartPage() {
               {item.specialInstructions && (
                 <div className="text-xs opacity-50 italic">"{item.specialInstructions}"</div>
               )}
-              <div className="text-sm font-semibold mt-1">
+              <div className="text-sm font-semibold mt-1" style={{ color: "var(--qb-primary)" }}>
                 ₹{(item.unitPrice + item.addons.reduce((s, a) => s + a.price, 0)) * item.quantity}
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="qb-qty-stepper">
               <button
                 onClick={() => updateQuantity(item.dishId, item.addons, -1)}
-                className="w-7 h-7 rounded-full glass-card flex items-center justify-center"
+                className="qb-qty-btn qb-qty-btn-minus"
+                aria-label="Decrease quantity"
               >
                 −
               </button>
-              <span className="w-4 text-center text-sm">{item.quantity}</span>
+              <span className="qb-qty-count text-sm">{item.quantity}</span>
               <button
                 onClick={() => updateQuantity(item.dishId, item.addons, 1)}
-                className="w-7 h-7 rounded-full glass-card flex items-center justify-center"
+                className="qb-qty-btn qb-qty-btn-plus"
+                aria-label="Increase quantity"
               >
                 +
               </button>
@@ -61,12 +63,14 @@ export default function CartPage() {
         <button onClick={clear} className="opacity-60 underline">
           Clear cart
         </button>
-        <span className="font-bold">Item total: ₹{total()}</span>
+        <span className="font-bold" style={{ color: "var(--qb-primary)" }}>
+          Item total: ₹{total()}
+        </span>
       </div>
 
       <button
         onClick={() => router.push("/customer/checkout")}
-        className="portal-btn-primary w-full py-3 text-sm"
+        className="qb-btn-cta w-full py-3 text-sm"
       >
         Proceed to Checkout
       </button>

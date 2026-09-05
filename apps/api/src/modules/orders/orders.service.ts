@@ -29,6 +29,26 @@ import {
 import { RealtimeEmitterService } from "../websocket/realtime-emitter.service";
 import { DeliveryService } from "../delivery/delivery.service";
 import { PaymentsService } from "../payments/payments.service";
+import { RestaurantsService } from "../restaurants/restaurants.service";
+import { OrderHistoryService, HistoryActorType } from "../order-history/order-history.service";
+
+const ROLE_TO_ACTOR_TYPE: Record<UserRole, HistoryActorType> = {
+  [UserRole.CUSTOMER]: "CUSTOMER",
+  [UserRole.RESTAURANT_OWNER]: "RESTAURANT",
+  [UserRole.DELIVERY_PARTNER]: "DRIVER",
+  [UserRole.ADMIN]: "ADMIN",
+};
+
+// The only transitions a RESTAURANT_OWNER may drive directly. PAYMENT_PENDING
+// has no entry (a restaurant never acts on an unpaid order) and
+// ASSIGNED/PICKED_UP/ON_THE_WAY/DELIVERED are deliberately absent as
+// "from" states — once dispatched, only the driver/system may advance it
+// further.
+const RESTAURANT_ALLOWED_TRANSITIONS: Partial<Record<OrderStatus, OrderStatus[]>> = {
+  [OrderStatus.PLACED]: [OrderStatus.ACCEPTED, OrderStatus.CANCELLED],
+  [OrderStatus.ACCEPTED]: [OrderStatus.PREPARING, OrderStatus.CANCELLED],
+  [OrderStatus.PREPARING]: [OrderStatus.READY_FOR_PICKUP, OrderStatus.CANCELLED],
+};
 
 @Injectable()
 export class OrdersService {
@@ -43,6 +63,8 @@ export class OrdersService {
     @InjectRepository(CouponEntity) private readonly coupons: Repository<CouponEntity>,
     private readonly realtime: RealtimeEmitterService,
     private readonly paymentsService: PaymentsService,
+    private readonly restaurantsService: RestaurantsService,
+    private readonly orderHistory: OrderHistoryService,
     @Inject(forwardRef(() => DeliveryService))
     private readonly delivery: DeliveryService,
   ) {}
@@ -52,6 +74,17 @@ export class OrdersService {
       where: { id: input.restaurantId },
     });
     if (!restaurant) throw new NotFoundException("Restaurant not found");
+    // Previously unchecked entirely — a customer could place an order
+    // against a CLOSED/PAUSED restaurant (or one mid-holiday) as long as its
+    // id and dishes were still valid. isOpenNow is the same function the
+    // customer-facing "why is this closed" banner reads, so the two can
+    // never disagree.
+    const availability = await this.restaurantsService.isOpenNow(restaurant);
+    if (!availability.open) {
+      throw new BadRequestException(
+        `${restaurant.name} isn't accepting orders right now${availability.reason ? ` (${availability.reason})` : ""}.`,
+      );
+    }
 
     let itemTotal = 0;
     const itemsToSave: Partial<OrderItemEntity>[] = [];
@@ -60,7 +93,10 @@ export class OrdersService {
       if (!dish || !dish.isInStock) {
         throw new BadRequestException(`Dish unavailable: ${cartItem.name}`);
       }
-      const unitPrice = dish.discountPrice ?? dish.price;
+      // Customer pays customerPrice when configured (admin markup); otherwise
+      // behavior is unchanged from before this field existed. Never derived from
+      // client input — always read fresh from the DB.
+      const unitPrice = dish.customerPrice ?? dish.discountPrice ?? dish.price;
       const addonsTotal = cartItem.addons.reduce((sum, a) => sum + a.price, 0);
       const lineTotal = (unitPrice + addonsTotal) * cartItem.quantity;
       itemTotal += lineTotal;
@@ -68,6 +104,7 @@ export class OrdersService {
         dishId: dish.id,
         nameSnapshot: dish.name,
         unitPriceSnapshot: unitPrice,
+        restaurantPriceSnapshot: dish.price,
         quantity: cartItem.quantity,
         addons: cartItem.addons,
       });
@@ -84,12 +121,19 @@ export class OrdersService {
       const coupon = await this.coupons.findOne({
         where: { code: input.couponCode.toUpperCase() },
       });
+      const now = new Date();
+      const underPerUserLimit =
+        !coupon?.perUserLimit ||
+        (await this.orders.count({ where: { couponId: coupon.id, customerId } })) <
+          coupon.perUserLimit;
       if (
         coupon &&
         coupon.isActive &&
         itemTotal >= coupon.minOrderValue &&
-        new Date(coupon.expiresAt) > new Date() &&
-        (!coupon.usageLimit || coupon.timesUsed < coupon.usageLimit)
+        (!coupon.startsAt || new Date(coupon.startsAt) <= now) &&
+        new Date(coupon.expiresAt) > now &&
+        (!coupon.usageLimit || coupon.timesUsed < coupon.usageLimit) &&
+        underPerUserLimit
       ) {
         couponId = coupon.id;
         if (coupon.type === CouponType.PERCENTAGE) {
@@ -151,6 +195,8 @@ export class OrdersService {
         await this.coupons.increment({ id: couponId }, "timesUsed", 1);
       }
 
+      await this.orderHistory.record(order.id, OrderStatus.PLACED, "CUSTOMER", customerId, "Order placed (Cash on Delivery)");
+
       const full = await this.get(order.id);
       this.realtime.orderCreated(full);
       return full;
@@ -207,6 +253,14 @@ export class OrdersService {
       return newOrder;
     });
 
+    await this.orderHistory.record(
+      savedOrder.id,
+      OrderStatus.PAYMENT_PENDING,
+      "CUSTOMER",
+      customerId,
+      "Order created, awaiting online payment",
+    );
+
     // orderCreated is intentionally NOT emitted here — the restaurant/KDS/admin only
     // learn this order exists once PaymentsService confirms payment succeeded.
     const full = await this.get(savedOrder.id);
@@ -257,11 +311,24 @@ export class OrdersService {
     if (!order) throw new NotFoundException("Order not found");
 
     const restaurant = await this.restaurants.findOne({ where: { id: order.restaurantId } });
-    if (
-      actor.role === UserRole.RESTAURANT_OWNER &&
-      restaurant?.ownerId !== actor.userId
-    ) {
-      throw new ForbiddenException("Not your restaurant's order");
+    if (actor.role === UserRole.RESTAURANT_OWNER) {
+      if (restaurant?.ownerId !== actor.userId) {
+        throw new ForbiddenException("Not your restaurant's order");
+      }
+      // Previously any status was accepted from a restaurant owner with no
+      // check at all — they could PATCH an order straight from PLACED to
+      // DELIVERED, skipping ACCEPTED/PREPARING/READY_FOR_PICKUP and the
+      // entire driver/OTP flow those stages gate. ASSIGNED/PICKED_UP/
+      // ON_THE_WAY/DELIVERED are driver- and system-controlled (via
+      // DeliveryService.advanceStage -> setStatusInternal) and must never be
+      // settable directly by the restaurant. Admin keeps override access for
+      // support/ops corrections.
+      const allowedNext = RESTAURANT_ALLOWED_TRANSITIONS[order.status] ?? [];
+      if (!allowedNext.includes(status)) {
+        throw new BadRequestException(
+          `Cannot move an order from ${order.status} to ${status}`,
+        );
+      }
     }
 
     await this.orders.update(id, {
@@ -272,17 +339,28 @@ export class OrdersService {
     this.realtime.orderStatusChanged(full);
     this.realtime.kitchenTicketUpdate(order.restaurantId, full);
 
+    await this.orderHistory.record(
+      id,
+      status,
+      ROLE_TO_ACTOR_TYPE[actor.role],
+      actor.userId,
+      status === OrderStatus.CANCELLED ? reason : undefined,
+    );
+
     if (status === OrderStatus.READY_FOR_PICKUP) {
       await this.delivery.createOfferForOrder(full);
     }
     return full;
   }
 
-  // Called internally by DeliveryService as the driver advances stages.
-  async setStatusInternal(id: string, status: OrderStatus) {
+  // Called internally by DeliveryService as the driver advances stages
+  // (ASSIGNED/PICKED_UP/ON_THE_WAY/DELIVERED) — actor is always the driver
+  // whose action triggered the transition.
+  async setStatusInternal(id: string, status: OrderStatus, driverId?: string) {
     await this.orders.update(id, { status });
     const full = await this.get(id);
     this.realtime.orderStatusChanged(full);
+    await this.orderHistory.record(id, status, driverId ? "DRIVER" : "SYSTEM", driverId);
     return full;
   }
 

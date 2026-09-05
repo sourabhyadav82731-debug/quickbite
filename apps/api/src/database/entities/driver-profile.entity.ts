@@ -23,6 +23,12 @@ export class DriverProfileEntity extends BaseEntity {
   @Column({ type: "float", nullable: true })
   currentLng?: number;
 
+  // ISO string. Lets a consumer tell a fresh live position apart from a stale
+  // one left over from a driver who went offline or lost connectivity mid-
+  // delivery — currentLat/currentLng alone can't distinguish those cases.
+  @Column({ nullable: true })
+  locationUpdatedAt?: string;
+
   @Column({ type: "float", default: 4.5 })
   rating: number;
 

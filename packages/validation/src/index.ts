@@ -6,6 +6,8 @@ import {
   UserRole,
   VehicleType,
   DeliveryStage,
+  RestaurantAvailabilityStatus,
+  StaffRole,
 } from "@quickbite/types";
 
 export const loginSchema = z.object({
@@ -14,12 +16,19 @@ export const loginSchema = z.object({
 });
 export type LoginInput = z.infer<typeof loginSchema>;
 
+// Public self-registration must never be able to mint an ADMIN account — admins
+// are provisioned out-of-band (currently: seed data only). Restaurant owner and
+// delivery partner remain self-assignable here since the existing architecture
+// gates their real capabilities behind separate approval (restaurant status
+// starts PENDING_APPROVAL; admin approves) rather than at the account-role level.
 export const registerSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
   password: z.string().min(6),
   phone: z.string().optional(),
-  role: z.nativeEnum(UserRole).default(UserRole.CUSTOMER),
+  role: z
+    .enum([UserRole.CUSTOMER, UserRole.RESTAURANT_OWNER, UserRole.DELIVERY_PARTNER])
+    .default(UserRole.CUSTOMER),
 });
 export type RegisterInput = z.infer<typeof registerSchema>;
 
@@ -68,12 +77,82 @@ export const menuCategorySchema = z.object({
 });
 export type MenuCategoryInput = z.infer<typeof menuCategorySchema>;
 
+export const menuCategoryUpdateSchema = z.object({
+  name: z.string().min(2).optional(),
+  sortOrder: z.number().int().nonnegative().optional(),
+});
+export type MenuCategoryUpdateInput = z.infer<typeof menuCategoryUpdateSchema>;
+
+// Owner-editable fields only — commissionRate/status/rating/ratingCount/
+// ownerId are deliberately absent (admin/system-controlled) so a restaurant
+// owner can never grant themselves a lower commission or self-approve their
+// own PENDING_APPROVAL status through this endpoint.
+export const restaurantUpdateSchema = z
+  .object({
+    name: z.string().min(2),
+    description: z.string(),
+    cuisines: z.array(z.string()),
+    coverImageUrl: z.string().nullable(),
+    fssaiLicense: z.string(),
+    avgPrepTimeMinutes: z.number().int().positive(),
+    costForTwo: z.number().nonnegative(),
+    deliveryRadiusKm: z.number().positive(),
+    lat: z.number(),
+    lng: z.number(),
+    isAcceptingOrders: z.boolean(),
+    availabilityStatus: z.nativeEnum(RestaurantAvailabilityStatus),
+    pauseReason: z.string().nullable(),
+    hours: z
+      .array(
+        z.object({
+          dayOfWeek: z.number().int().min(0).max(6),
+          open: z.string(),
+          close: z.string(),
+          closed: z.boolean(),
+        }),
+      )
+      .length(7)
+      .nullable(),
+  })
+  .partial();
+export type RestaurantUpdateInput = z.infer<typeof restaurantUpdateSchema>;
+
+export const restaurantAvailabilitySchema = z.object({
+  availabilityStatus: z.nativeEnum(RestaurantAvailabilityStatus),
+  pauseReason: z.string().optional(),
+});
+export type RestaurantAvailabilityInput = z.infer<typeof restaurantAvailabilitySchema>;
+
+export const restaurantHolidaySchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD"),
+  label: z.string().min(1),
+});
+export type RestaurantHolidayInput = z.infer<typeof restaurantHolidaySchema>;
+
+export const staffCreateSchema = z.object({
+  restaurantId: z.string(),
+  name: z.string().min(1),
+  email: z.string().email().optional(),
+  role: z.nativeEnum(StaffRole),
+});
+export type StaffCreateInput = z.infer<typeof staffCreateSchema>;
+
+export const staffUpdateSchema = z
+  .object({
+    role: z.nativeEnum(StaffRole),
+    isActive: z.boolean(),
+  })
+  .partial();
+export type StaffUpdateInput = z.infer<typeof staffUpdateSchema>;
+
 export const dishSchema = z.object({
   categoryId: z.string(),
   name: z.string().min(2),
   description: z.string().optional(),
   price: z.number().positive(),
   discountPrice: z.number().positive().optional(),
+  // Admin-only in practice — MenuService rejects this field from non-admin callers.
+  customerPrice: z.number().positive().optional(),
   imageUrl: z.string().optional(),
   dietaryTags: z.array(z.nativeEnum(DietaryTag)).default([]),
   calories: z.number().int().nonnegative().optional(),
@@ -101,10 +180,26 @@ export const couponSchema = z.object({
   minOrderValue: z.number().nonnegative().default(0),
   maxDiscount: z.number().positive().optional(),
   usageLimit: z.number().int().positive().optional(),
+  perUserLimit: z.number().int().positive().optional(),
+  startsAt: z.string().optional(),
   expiresAt: z.string(),
   isActive: z.boolean().default(true),
 });
 export type CouponInput = z.infer<typeof couponSchema>;
+
+export const couponUpdateSchema = z
+  .object({
+    value: z.number().nonnegative(),
+    minOrderValue: z.number().nonnegative(),
+    maxDiscount: z.number().positive().nullable(),
+    usageLimit: z.number().int().positive().nullable(),
+    perUserLimit: z.number().int().positive().nullable(),
+    startsAt: z.string().nullable(),
+    expiresAt: z.string(),
+    isActive: z.boolean(),
+  })
+  .partial();
+export type CouponUpdateInput = z.infer<typeof couponUpdateSchema>;
 
 export const reviewSchema = z.object({
   orderId: z.string(),
@@ -145,6 +240,22 @@ export const deliveryLocationUpdateSchema = z.object({
   lng: z.number(),
 });
 export type DeliveryLocationUpdateInput = z.infer<typeof deliveryLocationUpdateSchema>;
+
+// role is accepted for wire-contract compliance only — SupportController never
+// reads it; the actual role always comes from the authenticated JWT.
+export const assistantRequestSchema = z.object({
+  message: z.string().min(1).max(1000),
+  language: z.string().min(2).max(15),
+  role: z.string().optional(),
+  context: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+});
+export type AssistantRequestInput = z.infer<typeof assistantRequestSchema>;
+
+export const reverseGeocodeSchema = z.object({
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+});
+export type ReverseGeocodeInput = z.infer<typeof reverseGeocodeSchema>;
 
 export const verifyPaymentSchema = z.object({
   orderId: z.string(),

@@ -17,6 +17,15 @@ export class UsersController {
     return this.users.updateProfile(user.userId, body);
   }
 
+  @Post("users/me/change-password")
+  changePassword(
+    @CurrentUser() user: AuthUser,
+    @Body("currentPassword") currentPassword: string,
+    @Body("newPassword") newPassword: string,
+  ) {
+    return this.users.changePassword(user.userId, currentPassword, newPassword);
+  }
+
   @Get("addresses")
   listAddresses(@CurrentUser() user: AuthUser) {
     return this.users.listAddresses(user.userId);

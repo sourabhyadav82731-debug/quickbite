@@ -6,6 +6,7 @@ import {
   DishEntity,
   MenuCategoryEntity,
   RestaurantEntity,
+  RestaurantHolidayEntity,
 } from "../../database/entities";
 import { RestaurantsController } from "./restaurants.controller";
 import { RestaurantsService } from "./restaurants.service";
@@ -18,6 +19,7 @@ import { RestaurantsService } from "./restaurants.service";
       DishEntity,
       AddonGroupEntity,
       AddonEntity,
+      RestaurantHolidayEntity,
     ]),
   ],
   controllers: [RestaurantsController],

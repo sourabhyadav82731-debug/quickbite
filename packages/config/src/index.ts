@@ -22,7 +22,7 @@ export const SURGE_MULTIPLIERS = {
 
 export const TIP_PRESETS = [20, 30, 50] as const;
 
-export const OTP_LENGTH = 4;
+export const OTP_LENGTH = 4; // delivery pickup/drop OTPs
 export const DELIVERY_OFFER_ACCEPT_TIMEOUT_SECONDS = 45;
 
 export const JWT_ACCESS_TTL = "15m";

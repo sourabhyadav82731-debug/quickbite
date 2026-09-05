@@ -1,9 +1,11 @@
 "use client";
 
 import { Suspense, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { UserRole } from "@quickbite/types";
 import { useAuth } from "@/lib/auth";
+import { friendlyErrorMessage } from "@/lib/api";
 
 const ROLE_HOME: Record<string, string> = {
   [UserRole.CUSTOMER]: "/customer",
@@ -12,89 +14,157 @@ const ROLE_HOME: Record<string, string> = {
   [UserRole.ADMIN]: "/admin",
 };
 
-const DEMO_ACCOUNTS = [
-  { email: "customer@quickbite.com", label: "🍔 Customer" },
-  { email: "owner@quickbite.com", label: "🍽️ Restaurant Owner" },
-  { email: "driver@quickbite.com", label: "🛵 Delivery Partner" },
-  { email: "admin@quickbite.com", label: "👑 Admin" },
-];
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function LoginForm() {
   const { login } = useAuth();
   const router = useRouter();
   const params = useSearchParams();
+
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("Password@123");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [showForgotNotice, setShowForgotNotice] = useState(false);
 
-  async function doLogin(e?: string, p?: string) {
+  async function doLogin(e: React.FormEvent) {
+    e.preventDefault();
+    if (loading || success) return;
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !EMAIL_RE.test(trimmedEmail)) {
+      setError("Enter a valid email address.");
+      return;
+    }
+    if (!password) {
+      setError("Enter your password.");
+      return;
+    }
+
     setError(null);
     setLoading(true);
     try {
-      const user = await login(e ?? email, p ?? password);
+      const user = await login(trimmedEmail, password);
+      setSuccess(true);
       const next = params.get("next") ?? ROLE_HOME[user.role] ?? "/";
-      router.push(next);
-    } catch (err: any) {
-      setError(err?.message ?? "Login failed");
+      setTimeout(() => router.push(next), 400);
+    } catch (err) {
+      // The backend already returns "Invalid email or password." for wrong
+      // credentials without revealing which one was wrong — this only adds
+      // a generic fallback for anything else (network failure, 5xx, etc.).
+      setError(friendlyErrorMessage(err, "Unable to sign in. Please try again."));
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="flex-1 flex items-center justify-center bg-zinc-950 px-4 py-16">
-      <div className="w-full max-w-sm">
-        <h1 className="text-2xl font-bold text-white mb-1">Sign in to QuickBite</h1>
-        <p className="text-zinc-400 text-sm mb-6">
-          One login, routed to the portal for your role.
-        </p>
+    <div className="qb-auth-shell">
+      <div className="qb-auth-card">
+        <div className="flex flex-col items-center mb-5">
+          <div className="text-3xl mb-2" aria-hidden="true">
+            🍔
+          </div>
+          <h1 className="text-2xl font-heading uppercase tracking-wide">Welcome Back</h1>
+          <p className="text-sm mt-1" style={{ color: "var(--qb-text-secondary)" }}>
+            Your next craving is waiting.
+          </p>
+        </div>
 
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            doLogin();
-          }}
-          className="space-y-3 mb-6"
-        >
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-lg bg-zinc-900 border border-zinc-800 px-3 py-2 text-white text-sm"
-            required
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-lg bg-zinc-900 border border-zinc-800 px-3 py-2 text-white text-sm"
-            required
-          />
-          {error && <p className="text-red-400 text-sm">{error}</p>}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-lg bg-white text-black font-semibold py-2 text-sm disabled:opacity-50"
-          >
-            {loading ? "Signing in..." : "Sign in"}
+        <form onSubmit={doLogin} className="space-y-4">
+          <div>
+            <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--qb-text-secondary)" }}>
+              Email Address
+            </label>
+            <input
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setError(null);
+              }}
+              className={`qb-auth-input w-full px-4 ${error ? "qb-auth-input-error" : ""}`}
+              style={{ minHeight: 48 }}
+              autoComplete="email"
+              aria-label="Email address"
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--qb-text-secondary)" }}>
+              Password
+            </label>
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setError(null);
+                }}
+                className={`qb-auth-input w-full pl-4 pr-12 ${error ? "qb-auth-input-error" : ""}`}
+                style={{ minHeight: 48 }}
+                autoComplete="current-password"
+                aria-label="Password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-0 top-0 h-full px-3 text-xs opacity-70 hover:opacity-100"
+                style={{ minWidth: 44 }}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                tabIndex={-1}
+              >
+                {showPassword ? "🙈" : "👁"}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex justify-end -mt-1">
+            <button
+              type="button"
+              onClick={() => setShowForgotNotice((v) => !v)}
+              className="text-xs"
+              style={{ color: "var(--qb-glow)", minHeight: 44 }}
+            >
+              Forgot Password?
+            </button>
+          </div>
+
+          {showForgotNotice && (
+            <p className="text-xs -mt-2" style={{ color: "var(--qb-text-muted)" }} role="status">
+              Forgot password is not configured yet — please contact support to regain access to
+              your account.
+            </p>
+          )}
+
+          {error && (
+            <p className="text-sm qb-auth-status-error" role="alert">
+              {error}
+            </p>
+          )}
+          {success && (
+            <p className="text-sm qb-auth-status-success" role="status">
+              ✓ Signed in — redirecting...
+            </p>
+          )}
+
+          <button type="submit" disabled={loading || success} className="qb-auth-btn-primary">
+            {loading ? "Signing in..." : success ? "Signed in ✓" : "Sign In"}
           </button>
         </form>
 
-        <div className="text-zinc-500 text-xs mb-2">Quick demo login</div>
-        <div className="grid grid-cols-2 gap-2">
-          {DEMO_ACCOUNTS.map((acc) => (
-            <button
-              key={acc.email}
-              onClick={() => doLogin(acc.email, "Password@123")}
-              className="rounded-lg border border-zinc-800 text-zinc-200 text-xs py-2 hover:bg-zinc-900"
-            >
-              {acc.label}
-            </button>
-          ))}
-        </div>
+        <p className="text-sm text-center mt-6" style={{ color: "var(--qb-text-secondary)" }}>
+          New to Quickbits?{" "}
+          <Link href="/signup" className="font-medium" style={{ color: "var(--qb-glow)" }}>
+            Sign Up
+          </Link>
+        </p>
       </div>
     </div>
   );

@@ -11,6 +11,9 @@ import {
 import { WebsocketModule } from "../websocket/websocket.module";
 import { DeliveryModule } from "../delivery/delivery.module";
 import { PaymentsModule } from "../payments/payments.module";
+import { RestaurantsModule } from "../restaurants/restaurants.module";
+import { OrderHistoryModule } from "../order-history/order-history.module";
+import { RefundsModule } from "../refunds/refunds.module";
 import { OrdersController } from "./orders.controller";
 import { OrdersService } from "./orders.service";
 
@@ -26,6 +29,9 @@ import { OrdersService } from "./orders.service";
     ]),
     WebsocketModule,
     PaymentsModule,
+    RestaurantsModule,
+    OrderHistoryModule,
+    RefundsModule,
     forwardRef(() => DeliveryModule),
   ],
   controllers: [OrdersController],

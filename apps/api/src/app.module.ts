@@ -16,7 +16,12 @@ import { PayoutsModule } from "./modules/payouts/payouts.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { AdminModule } from "./modules/admin/admin.module";
 import { AiModule } from "./modules/ai/ai.module";
+import { GeocodingModule } from "./modules/geocoding/geocoding.module";
+import { SupportModule } from "./modules/support/support.module";
 import { WebsocketModule } from "./modules/websocket/websocket.module";
+import { UploadsModule } from "./modules/uploads/uploads.module";
+import { WithdrawalsModule } from "./modules/withdrawals/withdrawals.module";
+import { StaffModule } from "./modules/staff/staff.module";
 
 @Module({
   imports: [
@@ -36,6 +41,11 @@ import { WebsocketModule } from "./modules/websocket/websocket.module";
     NotificationsModule,
     AdminModule,
     AiModule,
+    GeocodingModule,
+    SupportModule,
+    UploadsModule,
+    WithdrawalsModule,
+    StaffModule,
   ],
   controllers: [AppController],
   providers: [AppService],

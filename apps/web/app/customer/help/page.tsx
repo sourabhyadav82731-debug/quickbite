@@ -6,7 +6,7 @@ const FAQS = [
   { q: "How do I track my order?", a: "Open Orders → tap the active order to see the live tracking stepper and delivery partner details." },
   { q: "How do I cancel an order?", a: "You can cancel from the order tracking page while it's still Placed or Confirmed." },
   { q: "My order arrived incomplete, what do I do?", a: "Raise a ticket below with your order ID and our support team will follow up." },
-  { q: "How do refunds work?", a: "Approved refunds are credited to your QuickBite Wallet within a few minutes in this build." },
+  { q: "How do refunds work?", a: "Approved refunds are credited to your Quickbits Wallet within a few minutes in this build." },
 ];
 
 export default function HelpPage() {

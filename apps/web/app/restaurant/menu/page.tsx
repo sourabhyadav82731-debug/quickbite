@@ -3,8 +3,14 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { DietaryTag } from "@quickbite/types";
-import { api, apiClient } from "@/lib/api";
+import { api, apiClient, uploadImage, API_URL, friendlyErrorMessage } from "@/lib/api";
 import { useRestaurant } from "@/lib/restaurant-context";
+import { DishEditModal } from "@/components/dish-edit-modal";
+
+function resolveUrl(url?: string | null) {
+  if (!url) return null;
+  return url.startsWith("http") ? url : `${API_URL}${url}`;
+}
 
 export default function MenuPage() {
   const { active } = useRestaurant();
@@ -18,6 +24,11 @@ export default function MenuPage() {
   const [newCategory, setNewCategory] = useState("");
   const [dishForm, setDishForm] = useState<Record<string, any>>({});
   const [showDishForm, setShowDishForm] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [editingDish, setEditingDish] = useState<any | null>(null);
+
+  const allCategories = ((menu as any[]) ?? []).map((c) => ({ id: c.id, name: c.name }));
 
   async function addCategory() {
     if (!newCategory) return;
@@ -29,21 +40,41 @@ export default function MenuPage() {
   async function addDish(categoryId: string) {
     const form = dishForm[categoryId];
     if (!form?.name || !form?.price) return;
-    await api.menu.createDish(active.id, {
-      categoryId,
-      name: form.name,
-      description: form.description ?? "",
-      price: Number(form.price),
-      dietaryTags: form.veg ? [DietaryTag.VEG] : [DietaryTag.NON_VEG],
-      isInStock: true,
-    });
-    setDishForm({ ...dishForm, [categoryId]: {} });
-    setShowDishForm(null);
-    qc.invalidateQueries({ queryKey: ["menu", active.id] });
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const dish: any = await api.menu.createDish(active.id, {
+        categoryId,
+        name: form.name,
+        description: form.description ?? "",
+        price: Number(form.price),
+        dietaryTags: form.veg ? [DietaryTag.VEG] : [DietaryTag.NON_VEG],
+        isInStock: true,
+      });
+      // Photo is optional at creation — if one was picked, attach it to the
+      // dish id we just got back rather than blocking dish creation on the
+      // upload succeeding.
+      if (form.photoFile) {
+        await uploadImage(`/dishes/${dish.id}/photo`, form.photoFile);
+      }
+      setDishForm({ ...dishForm, [categoryId]: {} });
+      setShowDishForm(null);
+      qc.invalidateQueries({ queryKey: ["menu", active.id] });
+    } catch (err) {
+      setCreateError(friendlyErrorMessage(err, "Failed to create dish"));
+    } finally {
+      setCreating(false);
+    }
   }
 
   async function toggleStock(dishId: string, isInStock: boolean) {
     await apiClient.patch(`/dishes/${dishId}/stock`, { isInStock: !isInStock });
+    qc.invalidateQueries({ queryKey: ["menu", active.id] });
+  }
+
+  async function deleteDish(dishId: string, name: string) {
+    if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return;
+    await api.menu.deleteDish(dishId);
     qc.invalidateQueries({ queryKey: ["menu", active.id] });
   }
 
@@ -120,23 +151,65 @@ export default function MenuPage() {
                   />
                   Veg
                 </label>
-                <button onClick={() => addDish(category.id)} className="portal-btn-primary px-3 py-1.5 text-xs ml-auto">
-                  Save Dish
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs glass-card px-2 py-1.5 rounded-lg cursor-pointer">
+                  {dishForm[category.id]?.photoFile ? "Photo selected" : "+ Photo (optional)"}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={(e) =>
+                      setDishForm({
+                        ...dishForm,
+                        [category.id]: { ...dishForm[category.id], photoFile: e.target.files?.[0] },
+                      })
+                    }
+                  />
+                </label>
+                <button
+                  onClick={() => addDish(category.id)}
+                  disabled={creating}
+                  className="portal-btn-primary px-3 py-1.5 text-xs ml-auto disabled:opacity-50"
+                >
+                  {creating ? "Saving…" : "Save Dish"}
                 </button>
               </div>
+              {createError && <p className="text-red-500 text-xs">{createError}</p>}
             </div>
           )}
 
           <div className="space-y-2">
             {category.dishes.map((dish: any) => (
-              <div key={dish.id} className="flex items-center justify-between text-sm py-1">
-                <div>
-                  <span className="font-medium">{dish.name}</span>{" "}
-                  <span className="opacity-60">₹{dish.price}</span>
+              <div key={dish.id} className="flex items-center gap-3 text-sm py-1.5">
+                <div
+                  className="w-11 h-11 rounded-lg overflow-hidden shrink-0"
+                  style={{ background: "var(--qb-elevated)" }}
+                >
+                  {dish.imageUrl ? (
+                    <img
+                      src={resolveUrl(dish.imageUrl) ?? ""}
+                      alt={dish.name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-sm opacity-40">🍽️</div>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium truncate">{dish.name}</div>
+                  <div className="opacity-60 text-xs">₹{dish.price}</div>
                 </div>
                 <button
+                  onClick={() => setEditingDish(dish)}
+                  className="text-xs px-2.5 py-1.5 rounded-lg glass-card shrink-0"
+                  style={{ minHeight: 32 }}
+                >
+                  Edit
+                </button>
+                <button
                   onClick={() => toggleStock(dish.id, dish.isInStock)}
-                  className="text-xs px-2 py-1 rounded-lg"
+                  className="text-xs px-2 py-1.5 rounded-lg shrink-0"
                   style={{
                     background: dish.isInStock ? "#00B89422" : "#e7404022",
                     color: dish.isInStock ? "#00B894" : "#e74040",
@@ -144,11 +217,27 @@ export default function MenuPage() {
                 >
                   {dish.isInStock ? "In Stock" : "Out of Stock"}
                 </button>
+                <button
+                  onClick={() => deleteDish(dish.id, dish.name)}
+                  className="text-xs px-2 py-1.5 rounded-lg shrink-0"
+                  style={{ color: "var(--qb-error)", minHeight: 32 }}
+                >
+                  Delete
+                </button>
               </div>
             ))}
           </div>
         </section>
       ))}
+
+      {editingDish && (
+        <DishEditModal
+          dish={editingDish}
+          categories={allCategories}
+          onClose={() => setEditingDish(null)}
+          onSaved={() => qc.invalidateQueries({ queryKey: ["menu", active.id] })}
+        />
+      )}
     </div>
   );
 }

@@ -58,6 +58,43 @@ export enum RestaurantStatus {
   CLOSED = "CLOSED",
 }
 
+// Owner-controlled real-time toggle — separate from RestaurantStatus (admin
+// approval/suspension) above.
+export enum RestaurantAvailabilityStatus {
+  OPEN = "OPEN",
+  CLOSED = "CLOSED",
+  PAUSED = "PAUSED",
+}
+
+export interface DayHours {
+  dayOfWeek: number; // 0=Sunday .. 6=Saturday
+  open: string; // "HH:MM"
+  close: string; // "HH:MM"
+  closed: boolean;
+}
+
+export type WeeklyHours = DayHours[];
+
+export interface RestaurantHoliday extends BaseRecord {
+  restaurantId: string;
+  date: string; // "YYYY-MM-DD"
+  label: string;
+}
+
+export enum StaffRole {
+  MANAGER = "MANAGER",
+  KITCHEN = "KITCHEN",
+  STAFF = "STAFF",
+}
+
+export interface StaffMember extends BaseRecord {
+  restaurantId: string;
+  name: string;
+  email?: string;
+  role: StaffRole;
+  isActive: boolean;
+}
+
 export enum VehicleType {
   BICYCLE = "BICYCLE",
   BIKE = "BIKE",
@@ -83,6 +120,14 @@ export enum NotificationType {
   PROMO = "PROMO",
   SYSTEM = "SYSTEM",
   PAYOUT = "PAYOUT",
+}
+
+export enum RefundStatus {
+  REQUESTED = "REQUESTED",
+  APPROVED = "APPROVED",
+  REJECTED = "REJECTED",
+  PROCESSING = "PROCESSING",
+  REFUNDED = "REFUNDED",
 }
 
 // ---------- Core domain interfaces ----------
@@ -147,11 +192,21 @@ export interface Dish extends BaseRecord {
   description?: string;
   price: number;
   discountPrice?: number;
+  // Customer-facing selling price, admin-configured, separate from `price` (the
+  // restaurant's own base price). Undefined until explicitly set.
+  customerPrice?: number;
   imageUrl?: string;
   dietaryTags: DietaryTag[];
   calories?: number;
   isInStock: boolean;
   addonGroupIds: string[];
+}
+
+/** Dish shape as returned by GET /restaurants/:id/menu — adds the server-resolved
+ *  customer price (customerPrice ?? discountPrice ?? price) so callers never have
+ *  to replicate that fallback logic themselves. */
+export interface MenuDish extends Dish {
+  sellingPrice: number;
 }
 
 export interface AddonGroup extends BaseRecord {
@@ -189,6 +244,9 @@ export interface OrderItem {
   dishId: string;
   nameSnapshot: string;
   unitPriceSnapshot: number;
+  // The restaurant's own base-price snapshot at order time — independent of
+  // unitPriceSnapshot (what the customer paid), and unaffected by later dish.price edits.
+  restaurantPriceSnapshot: number;
   quantity: number;
   addons: CartAddonSelection[];
 }
@@ -235,6 +293,7 @@ export interface Coupon extends BaseRecord {
   maxDiscount?: number;
   usageLimit?: number;
   timesUsed: number;
+  startsAt?: string;
   expiresAt: string;
   isActive: boolean;
 }
@@ -251,6 +310,7 @@ export interface DriverProfile extends BaseRecord {
   acceptanceRate: number;
   onTimeRate: number;
   codCashInHand: number;
+  locationUpdatedAt?: string;
 }
 
 export interface Delivery extends BaseRecord {
@@ -295,6 +355,69 @@ export interface AuditLog extends BaseRecord {
   metadata?: Record<string, unknown>;
 }
 
+// ---------- QuickBite Helping Agent ----------
+
+export const SUPPORTED_LANGUAGES = [
+  "en",
+  "hi",
+  "hinglish",
+  "kn",
+  "ta",
+  "te",
+  "mr",
+  "bn",
+  "gu",
+  "ml",
+  "pa",
+  "ur",
+] as const;
+export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
+
+export interface AssistantAction {
+  label: string;
+  route: string;
+}
+
+/** Safe, non-sensitive UI context only — never OTPs, tokens, or payment secrets. */
+export interface AssistantContext {
+  currentPage?: string;
+  cartItemCount?: number;
+  activeOrderStatus?: string;
+  pendingOrdersCount?: number;
+  activeDeliveryStage?: string;
+  tripsCount?: number;
+  walletBalance?: number;
+  dashboardSection?: string;
+}
+
+export interface AssistantRequest {
+  message: string;
+  language: SupportedLanguage;
+  // Informational only — the backend always derives the real role from the
+  // authenticated JWT and ignores this field. Present so the wire contract
+  // matches the spec; never trusted for authorization or content selection.
+  role?: UserRole;
+  context?: AssistantContext;
+}
+
+export interface AssistantResponse {
+  message: string;
+  actions: AssistantAction[];
+}
+
+export interface ReverseGeocodeResult {
+  formattedAddress: string;
+  houseNumber?: string;
+  area?: string;
+  street?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
+  lat: number;
+  lng: number;
+}
+
 // ---------- API envelopes ----------
 
 export interface ApiResponse<T> {
@@ -321,8 +444,51 @@ export type OrderWsEvent =
 export type DeliveryWsEvent =
   | "delivery.offer"
   | "delivery.offer.respond"
+  | "delivery.offerClosed"
   | "delivery.assigned"
   | "delivery.location.update"
   | "delivery.locationChanged"
   | "delivery.stage.advance"
   | "delivery.stageChanged";
+
+// ---------- Wallet withdrawals ----------
+
+export enum WithdrawalOwnerType {
+  DRIVER = "DRIVER",
+  RESTAURANT = "RESTAURANT",
+}
+
+export enum WithdrawalStatus {
+  PENDING = "PENDING",
+  PROCESSING = "PROCESSING",
+  COMPLETED = "COMPLETED",
+  FAILED = "FAILED",
+}
+
+export interface WithdrawalRequest extends BaseRecord {
+  ownerType: WithdrawalOwnerType;
+  ownerId: string;
+  amount: number;
+  payoutMethod: string;
+  status: WithdrawalStatus;
+  referenceId?: string;
+  failureReason?: string;
+  processedAt?: string;
+}
+
+export interface WalletBalance {
+  availableBalance: number;
+  totalEarnings: number;
+  todayEarnings: number;
+  weekEarnings: number;
+  pendingWithdrawals: number;
+}
+
+// ---------- Restaurant photos ----------
+
+export interface RestaurantPhoto extends BaseRecord {
+  restaurantId: string;
+  url: string;
+  isCover: boolean;
+  sortOrder: number;
+}

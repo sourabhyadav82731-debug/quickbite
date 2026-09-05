@@ -1,7 +1,12 @@
-import { Body, Controller, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { UserRole } from "@quickbite/types";
-import { addonGroupSchema, dishSchema, menuCategorySchema } from "@quickbite/validation";
+import {
+  addonGroupSchema,
+  dishSchema,
+  menuCategorySchema,
+  menuCategoryUpdateSchema,
+} from "@quickbite/validation";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
@@ -25,6 +30,30 @@ export class MenuController {
     return this.menu.createCategory(restaurantId, user as any, body);
   }
 
+  @Patch("categories/:id")
+  updateCategory(
+    @Param("id") categoryId: string,
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(menuCategoryUpdateSchema))
+    body: ReturnType<typeof menuCategoryUpdateSchema.parse>,
+  ) {
+    return this.menu.updateCategory(categoryId, user as any, body);
+  }
+
+  @Delete("categories/:id")
+  deleteCategory(@Param("id") categoryId: string, @CurrentUser() user: AuthUser) {
+    return this.menu.deleteCategory(categoryId, user as any);
+  }
+
+  @Post("restaurants/:id/categories/reorder")
+  reorderCategories(
+    @Param("id") restaurantId: string,
+    @CurrentUser() user: AuthUser,
+    @Body("orderedIds") orderedIds: string[],
+  ) {
+    return this.menu.reorderCategories(restaurantId, user as any, orderedIds);
+  }
+
   @Post("restaurants/:id/dishes")
   createDish(
     @Param("id") restaurantId: string,
@@ -41,6 +70,11 @@ export class MenuController {
     @Body() body: Record<string, unknown>,
   ) {
     return this.menu.updateDish(dishId, user as any, body);
+  }
+
+  @Delete("dishes/:id")
+  deleteDish(@Param("id") dishId: string, @CurrentUser() user: AuthUser) {
+    return this.menu.deleteDish(dishId, user as any);
   }
 
   @Patch("dishes/:id/stock")

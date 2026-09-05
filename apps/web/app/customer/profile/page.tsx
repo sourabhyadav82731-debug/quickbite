@@ -38,7 +38,7 @@ export default function ProfilePage() {
       </div>
 
       <div className="glass-card p-5 flex items-center justify-between">
-        <span className="font-semibold">QuickBite Wallet</span>
+        <span className="font-semibold">Quickbits Wallet</span>
         <span className="text-lg font-bold" style={{ color: "var(--portal-primary)" }}>
           ₹{user?.walletBalance ?? 0}
         </span>

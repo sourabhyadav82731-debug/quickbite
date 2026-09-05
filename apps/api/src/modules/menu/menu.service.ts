@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { In, Repository } from "typeorm";
 import { UserRole } from "@quickbite/types";
 import { AddonGroupInput, DishInput, MenuCategoryInput } from "@quickbite/validation";
 import {
@@ -51,12 +51,60 @@ export class MenuService {
     return this.categories.save(this.categories.create({ ...input, restaurantId }));
   }
 
+  async updateCategory(
+    categoryId: string,
+    actor: { userId: string; role: UserRole },
+    patch: { name?: string; sortOrder?: number },
+  ) {
+    const category = await this.categories.findOne({ where: { id: categoryId } });
+    if (!category) throw new NotFoundException("Category not found");
+    await this.assertOwnership(category.restaurantId, actor);
+    await this.categories.update(categoryId, patch);
+    return this.categories.findOne({ where: { id: categoryId } });
+  }
+
+  // "Delete where safe" — a category with dishes in it must be emptied or
+  // have them moved first, never silently deleted along with (or orphaning)
+  // its dishes.
+  async deleteCategory(categoryId: string, actor: { userId: string; role: UserRole }) {
+    const category = await this.categories.findOne({ where: { id: categoryId } });
+    if (!category) throw new NotFoundException("Category not found");
+    await this.assertOwnership(category.restaurantId, actor);
+    const dishCount = await this.dishes.count({ where: { categoryId } });
+    if (dishCount > 0) {
+      throw new ForbiddenException(
+        `Cannot delete "${category.name}" — it still has ${dishCount} dish(es). Move or delete them first.`,
+      );
+    }
+    await this.categories.delete(categoryId);
+    return { success: true };
+  }
+
+  async reorderCategories(
+    restaurantId: string,
+    actor: { userId: string; role: UserRole },
+    orderedIds: string[],
+  ) {
+    await this.assertOwnership(restaurantId, actor);
+    const categories = await this.categories.find({ where: { restaurantId } });
+    const idSet = new Set(categories.map((c) => c.id));
+    // Every id must belong to this restaurant — silently accepting a
+    // foreign id would let an owner reorder rows that overlap with (but
+    // aren't necessarily limited to) another restaurant's categories.
+    if (orderedIds.length !== categories.length || !orderedIds.every((id) => idSet.has(id))) {
+      throw new ForbiddenException("orderedIds must be exactly this restaurant's own category ids");
+    }
+    await Promise.all(orderedIds.map((id, i) => this.categories.update(id, { sortOrder: i })));
+    return this.categories.find({ where: { restaurantId }, order: { sortOrder: "ASC" } });
+  }
+
   async createDish(
     restaurantId: string,
     actor: { userId: string; role: UserRole },
     input: DishInput,
   ) {
     await this.assertOwnership(restaurantId, actor);
+    this.assertCanSetCustomerPrice(input, actor);
     return this.dishes.save(this.dishes.create({ ...input, restaurantId }));
   }
 
@@ -67,8 +115,37 @@ export class MenuService {
   ) {
     const dish = await this.dishOwner(dishId);
     await this.assertOwnership(dish.restaurantId, actor);
+    this.assertCanSetCustomerPrice(patch, actor);
     await this.dishes.update(dishId, patch);
     return this.dishes.findOne({ where: { id: dishId } });
+  }
+
+  // Safe to delete outright — OrderItemEntity stores its own nameSnapshot/
+  // price snapshots and has no foreign-key dependency on the dish still
+  // existing, so past orders/receipts are unaffected either way. Disabling
+  // via isInStock remains the reversible option; this is the permanent one.
+  async deleteDish(dishId: string, actor: { userId: string; role: UserRole }) {
+    const dish = await this.dishOwner(dishId);
+    await this.assertOwnership(dish.restaurantId, actor);
+    const groups = await this.addonGroups.find({ where: { dishId } });
+    if (groups.length) {
+      await this.addons.delete({ addonGroupId: In(groups.map((g) => g.id)) });
+      await this.addonGroups.delete({ dishId });
+    }
+    await this.dishes.delete(dishId);
+    return { success: true };
+  }
+
+  // customerPrice is the platform's markup/selling-price decision, not the
+  // restaurant's own price — restaurant owners may only ever set `price`
+  // (their base/cost price) and `discountPrice`, never customerPrice.
+  private assertCanSetCustomerPrice(
+    input: Record<string, unknown>,
+    actor: { userId: string; role: UserRole },
+  ) {
+    if (input.customerPrice !== undefined && actor.role !== UserRole.ADMIN) {
+      throw new ForbiddenException("Only admin can set the customer-facing price");
+    }
   }
 
   async toggleStock(

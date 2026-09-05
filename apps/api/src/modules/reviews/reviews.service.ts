@@ -17,8 +17,13 @@ export class ReviewsService {
     return this.reviews.save(this.reviews.create({ ...input, authorId }));
   }
 
+  // Public/customer-facing — admin-hidden reviews (see AdminService.setReviewVisibility)
+  // must never appear here, or moderation would have no real effect.
   forRestaurant(restaurantId: string) {
-    return this.reviews.find({ where: { restaurantId }, order: { createdAt: "DESC" } });
+    return this.reviews.find({
+      where: { restaurantId, isHidden: false },
+      order: { createdAt: "DESC" },
+    });
   }
 
   async reply(

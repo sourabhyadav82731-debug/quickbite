@@ -1,16 +1,19 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiClient } from "@/lib/api";
 import { connectDeliverySocket } from "@/lib/socket";
+import { AdminFleetMap } from "@/components/admin-fleet-map";
 
 export default function LiveMapPage() {
   const { data } = useQuery({
     queryKey: ["admin-active-deliveries"],
     queryFn: () => apiClient.get<any[]>("/admin/deliveries/active"),
+    refetchInterval: 15000,
   });
   const [deliveries, setDeliveries] = useState<any[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
     if (data) setDeliveries(data as any[]);
@@ -30,7 +33,11 @@ export default function LiveMapPage() {
     });
     socket?.on("delivery.locationChanged", (loc: any) => {
       setDeliveries((prev) =>
-        prev.map((x) => (x.id === loc.deliveryId ? { ...x, liveLat: loc.lat, liveLng: loc.lng } : x)),
+        prev.map((x) =>
+          x.id === loc.deliveryId
+            ? { ...x, liveLat: loc.lat, liveLng: loc.lng, liveUpdatedAt: loc.updatedAt }
+            : x,
+        ),
       );
     });
     return () => {
@@ -38,37 +45,63 @@ export default function LiveMapPage() {
     };
   }, []);
 
+  const activeDrivers = useMemo(
+    () => new Set(deliveries.map((d) => d.driverId).filter(Boolean)).size,
+    [deliveries],
+  );
+  const selected = deliveries.find((d) => d.id === selectedId) ?? null;
+
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-bold">Live GPS Fleet Radar</h1>
-      <p className="text-xs opacity-60">
-        Positions plotted from live driver pings — a real map tile provider is planned for a
-        future pass.
-      </p>
+      <h1 className="text-xl font-bold">Live Deliveries</h1>
 
-      <div className="glass-card p-4 relative" style={{ height: 360 }}>
-        <svg viewBox="0 0 100 100" className="w-full h-full">
-          <rect width="100" height="100" fill="var(--portal-border)" opacity="0.3" />
-          {deliveries.map((d) => {
-            const lat = d.liveLat ?? d.driverLocation?.currentLat ?? 12.97;
-            const lng = d.liveLng ?? d.driverLocation?.currentLng ?? 77.6;
-            const x = ((lng - 77.55) / 0.1) * 100;
-            const y = ((13.0 - lat) / 0.06) * 100;
-            return (
-              <g key={d.id}>
-                <circle cx={Math.min(96, Math.max(4, x))} cy={Math.min(96, Math.max(4, y))} r="3" fill="var(--portal-primary)" />
-              </g>
-            );
-          })}
-        </svg>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="d3-card p-4 text-center">
+          <div className="text-2xl font-bold">{deliveries.length}</div>
+          <div className="text-xs opacity-60">Active Deliveries</div>
+        </div>
+        <div className="d3-card p-4 text-center">
+          <div className="text-2xl font-bold">{activeDrivers}</div>
+          <div className="text-xs opacity-60">Active Drivers</div>
+        </div>
       </div>
+
+      <AdminFleetMap
+        deliveries={deliveries}
+        selectedId={selectedId}
+        onSelect={(id) => setSelectedId(id)}
+      />
+
+      {selected && (
+        <div className="d3-card p-4 space-y-1 text-sm">
+          <div className="flex items-center justify-between">
+            <span className="font-semibold">Order #{selected.orderId.slice(0, 8)}</span>
+            <button onClick={() => setSelectedId(null)} className="text-xs opacity-60">
+              ✕ Close
+            </button>
+          </div>
+          <div className="opacity-70 text-xs">
+            Driver: {selected.driverId ? selected.driverId.slice(0, 8) : "Unassigned"}
+          </div>
+          <div className="opacity-70 text-xs">Status: {selected.stage.replace(/_/g, " ")}</div>
+          {selected.liveUpdatedAt && (
+            <div className="opacity-50 text-[10px]">
+              Last updated: {new Date(selected.liveUpdatedAt).toLocaleTimeString("en-IN")}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="space-y-2">
         {deliveries.map((d) => (
-          <div key={d.id} className="glass-card p-3 flex items-center justify-between text-sm">
+          <button
+            key={d.id}
+            onClick={() => setSelectedId(d.id)}
+            className="w-full glass-card p-3 flex items-center justify-between text-sm text-left"
+          >
             <span>Order #{d.orderId.slice(0, 8)}</span>
             <span className="text-xs px-2 py-0.5 rounded-full glass-card">{d.stage.replace(/_/g, " ")}</span>
-          </div>
+          </button>
         ))}
         {deliveries.length === 0 && <p className="opacity-60 text-sm">No active deliveries right now.</p>}
       </div>

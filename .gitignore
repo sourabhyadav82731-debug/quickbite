@@ -4,6 +4,7 @@ dist/
 out/
 *.sqlite
 *.sqlite3
+apps/api/uploads/
 .env
 .env.local
 .DS_Store

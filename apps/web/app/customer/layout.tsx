@@ -3,15 +3,16 @@
 import Link from "next/link";
 import { ReactNode } from "react";
 import { PortalChrome } from "@/components/portal-chrome";
+import { CartBar } from "@/components/cart-bar";
 import { useCartStore } from "@/lib/cart-store";
 
 const NAV = [
-  { href: "/customer", label: "Discover" },
-  { href: "/customer/orders", label: "Orders" },
-  { href: "/customer/offers", label: "Offers" },
-  { href: "/customer/addresses", label: "Addresses" },
-  { href: "/customer/profile", label: "Profile" },
-  { href: "/customer/help", label: "Help" },
+  { href: "/customer", label: "Home", icon: "🏠" },
+  { href: "/customer/orders", label: "Orders", icon: "📦" },
+  { href: "/customer/offers", label: "Offers", icon: "🏷️" },
+  { href: "/customer/addresses", label: "Addresses", icon: "📍" },
+  { href: "/customer/profile", label: "Profile", icon: "👤" },
+  { href: "/customer/help", label: "Help", icon: "❓" },
 ];
 
 export default function CustomerLayout({ children }: { children: ReactNode }) {
@@ -20,19 +21,19 @@ export default function CustomerLayout({ children }: { children: ReactNode }) {
   return (
     <PortalChrome
       portal="customer"
-      title="🍔 QuickBite"
+      title="🍔 Quickbits"
       navLinks={NAV}
       extraHeader={
         <Link
           href="/customer/cart"
           className="relative px-3 py-1.5 rounded-lg text-sm font-medium"
-          style={{ background: "var(--portal-border)" }}
+          style={{ background: "var(--qbnav-border)", color: "var(--qbnav-text)" }}
         >
           🛒 Cart
           {itemCount > 0 && (
             <span
-              className="absolute -top-1.5 -right-1.5 text-[10px] font-bold text-white rounded-full w-4 h-4 flex items-center justify-center"
-              style={{ background: "var(--portal-primary)" }}
+              className="absolute -top-1.5 -right-1.5 text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center"
+              style={{ background: "var(--qb-glow)", color: "#171313" }}
             >
               {itemCount}
             </span>
@@ -40,7 +41,8 @@ export default function CustomerLayout({ children }: { children: ReactNode }) {
         </Link>
       }
     >
-      {children}
+      <div style={itemCount > 0 ? { paddingBottom: "5rem" } : undefined}>{children}</div>
+      <CartBar />
     </PortalChrome>
   );
 }

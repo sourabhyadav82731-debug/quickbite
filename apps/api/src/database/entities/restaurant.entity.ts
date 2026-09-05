@@ -1,5 +1,5 @@
 import { Column, Entity, Index } from "typeorm";
-import { RestaurantStatus } from "@quickbite/types";
+import { RestaurantAvailabilityStatus, RestaurantStatus, WeeklyHours } from "@quickbite/types";
 import { RESTAURANT_COMMISSION_RATE } from "@quickbite/config";
 import { BaseEntity } from "./base.entity";
 
@@ -50,6 +50,25 @@ export class RestaurantEntity extends BaseEntity {
 
   @Column({ type: "float", default: 0 })
   lng: number;
+
+  // Owner-controlled real-time availability toggle — distinct from `status`
+  // (admin-controlled approval/suspension above). `isAcceptingOrders` is kept
+  // in sync with this (true only when OPEN) purely so every pre-existing read
+  // path that already depends on that boolean (customer discover-page
+  // filtering, etc.) keeps working unchanged; new code should read
+  // `availabilityStatus` directly.
+  @Column({ type: "varchar", default: RestaurantAvailabilityStatus.OPEN })
+  availabilityStatus: RestaurantAvailabilityStatus;
+
+  @Column({ nullable: true })
+  pauseReason?: string;
+
+  // Fixed 7-entry weekly schedule — simple-json (portable across the
+  // sqlite/postgres split, same as other structured columns in this codebase)
+  // rather than a separate table, since it's always exactly 7 rows keyed by
+  // day-of-week, never a variable-length collection.
+  @Column({ type: "simple-json", nullable: true })
+  hours?: WeeklyHours;
 
   @Column({ default: true })
   isAcceptingOrders: boolean;

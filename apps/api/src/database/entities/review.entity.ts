@@ -31,4 +31,10 @@ export class ReviewEntity extends BaseEntity {
 
   @Column({ type: "text", nullable: true })
   ownerReply?: string;
+
+  // Admin moderation only — hides a review from customer-facing display
+  // without deleting or altering its rating/content (never fabricate or
+  // change what a customer actually said).
+  @Column({ default: false })
+  isHidden: boolean;
 }

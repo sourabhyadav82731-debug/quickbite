@@ -8,6 +8,8 @@ import { api, apiClient } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { connectDeliverySocket, connectOrdersSocket } from "@/lib/socket";
 import { openRazorpayCheckout } from "@/lib/razorpay";
+import { DeliveryMap } from "@/components/delivery-map";
+import { LiveTrackingBadge } from "@/components/live-tracking-badge";
 
 const STEPS = [
   { label: "Order Placed", statuses: [OrderStatus.PLACED] },
@@ -43,6 +45,8 @@ export default function OrderTrackingPage() {
   const [order, setOrder] = useState<any>(null);
   const [delivery, setDelivery] = useState<any>(null);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationUpdatedAt, setLocationUpdatedAt] = useState<string | null>(null);
+  const [socketConnected, setSocketConnected] = useState(false);
   const [paymentState, setPaymentState] = useState<"idle" | "processing" | "failed" | "cancelled">(
     "idle",
   );
@@ -61,7 +65,14 @@ export default function OrderTrackingPage() {
   });
 
   useEffect(() => setOrder(data), [data]);
-  useEffect(() => setDelivery(deliveryData), [deliveryData]);
+  useEffect(() => {
+    setDelivery(deliveryData);
+    const driver = (deliveryData as any)?.driver;
+    if (driver?.lat != null && driver?.lng != null) {
+      setLocation({ lat: driver.lat, lng: driver.lng });
+      setLocationUpdatedAt(driver.locationUpdatedAt ?? null);
+    }
+  }, [deliveryData]);
 
   useEffect(() => {
     if (order?.status !== OrderStatus.PAYMENT_PENDING) return;
@@ -79,8 +90,12 @@ export default function OrderTrackingPage() {
     if (!order || order.status === OrderStatus.PAYMENT_PENDING) return;
     const ordersSocket = connectOrdersSocket();
     const deliverySocket = connectDeliverySocket();
-    ordersSocket?.emit("order.subscribe", { orderId: id });
-    deliverySocket?.emit("delivery.subscribe", { orderId: id });
+
+    function subscribe() {
+      ordersSocket?.emit("order.subscribe", { orderId: id });
+      deliverySocket?.emit("delivery.subscribe", { orderId: id });
+    }
+    subscribe();
 
     ordersSocket?.on("order.statusChanged", (updated: any) => {
       if (updated.id === id) setOrder(updated);
@@ -90,7 +105,18 @@ export default function OrderTrackingPage() {
     });
     deliverySocket?.on("delivery.locationChanged", (loc: any) => {
       setLocation({ lat: loc.lat, lng: loc.lng });
+      setLocationUpdatedAt(loc.updatedAt ?? new Date().toISOString());
     });
+    deliverySocket?.on("connect", () => {
+      setSocketConnected(true);
+      // Re-subscribe (rooms don't survive a reconnect) and re-fetch the
+      // latest persisted position — a stale position from before the drop
+      // must never keep being shown as LIVE while we were disconnected.
+      subscribe();
+      qc.invalidateQueries({ queryKey: ["delivery-for-order", id] });
+    });
+    deliverySocket?.on("disconnect", () => setSocketConnected(false));
+    setSocketConnected(deliverySocket?.connected ?? false);
 
     return () => {
       ordersSocket?.disconnect();
@@ -112,7 +138,7 @@ export default function OrderTrackingPage() {
       amountPaise: paymentInfo.amountPaise,
       currency: paymentInfo.currency,
       razorpayOrderId: paymentInfo.razorpayOrderId,
-      name: "QuickBite",
+      name: "Quickbits",
       description: `Order #${id.slice(0, 8)}`,
       prefill: { name: user?.name, email: user?.email },
       onSuccess: async (response) => {
@@ -170,7 +196,7 @@ export default function OrderTrackingPage() {
             <button
               onClick={handlePayNow}
               disabled={paymentState === "processing" || !paymentInfo}
-              className="portal-btn-primary w-full py-3 text-sm disabled:opacity-50"
+              className="qb-btn-cta w-full py-3 text-sm disabled:opacity-50"
             >
               {paymentState === "processing"
                 ? "Waiting for payment..."
@@ -184,12 +210,16 @@ export default function OrderTrackingPage() {
             {STEPS.map((s, i) => (
               <div key={s.label} className="flex items-center gap-3">
                 <div
-                  className="w-6 h-6 rounded-full flex items-center justify-center text-xs text-white shrink-0"
-                  style={{
-                    background: i <= step ? "var(--portal-primary)" : "var(--portal-border)",
-                  }}
+                  className="w-6 h-6 rounded-full flex items-center justify-center text-xs shrink-0"
+                  style={
+                    i < step
+                      ? { background: "var(--qb-primary)", color: "var(--qb-glow)" }
+                      : i === step
+                        ? { background: "var(--qb-primary)", color: "var(--qb-glow)", boxShadow: "0 0 0 3px rgba(255, 201, 40, 0.35)" }
+                        : { background: "var(--portal-border)", color: "var(--portal-fg)" }
+                  }
                 >
-                  {i <= step ? "✓" : i + 1}
+                  {i < step ? "✓" : i + 1}
                 </div>
                 <span className={i <= step ? "font-medium" : "opacity-50"}>{s.label}</span>
               </div>
@@ -210,15 +240,28 @@ export default function OrderTrackingPage() {
               </div>
             </div>
             {delivery.driver.phone && (
-              <a href={`tel:${delivery.driver.phone}`} className="portal-btn-primary px-3 py-1.5 text-xs">
+              <a href={`tel:${delivery.driver.phone}`} className="qb-btn-secondary px-3 py-1.5 text-xs">
                 📞 Call
               </a>
             )}
           </div>
-          {location && (
-            <p className="text-xs opacity-50 mt-2">
-              Live location: {location.lat.toFixed(4)}, {location.lng.toFixed(4)}
-            </p>
+          {order.status !== OrderStatus.DELIVERED && (
+            <div className="mt-3 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold opacity-70">Track Your Order</span>
+                <LiveTrackingBadge socketConnected={socketConnected} locationUpdatedAt={locationUpdatedAt} />
+              </div>
+              <DeliveryMap
+                height={200}
+                restaurant={
+                  delivery.restaurantLat != null
+                    ? { lat: delivery.restaurantLat, lng: delivery.restaurantLng }
+                    : null
+                }
+                destination={delivery.dropLat != null ? { lat: delivery.dropLat, lng: delivery.dropLng } : null}
+                driver={location}
+              />
+            </div>
           )}
           {delivery.dropOtp && (
             <div className="mt-3 text-xs opacity-70">

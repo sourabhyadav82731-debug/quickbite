@@ -3,8 +3,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import { useState } from "react";
-import { api } from "@/lib/api";
+import { api, apiClient, API_URL } from "@/lib/api";
 import { useCartStore } from "@/lib/cart-store";
+
+function resolveUrl(url?: string | null) {
+  if (!url) return null;
+  return url.startsWith("http") ? url : `${API_URL}${url}`;
+}
 
 export default function RestaurantMenuPage() {
   const { id } = useParams<{ id: string }>();
@@ -16,13 +21,24 @@ export default function RestaurantMenuPage() {
     queryKey: ["menu", id],
     queryFn: () => api.restaurants.menu(id),
   });
+  const { data: photos } = useQuery({
+    queryKey: ["restaurant-photos", id],
+    queryFn: () => apiClient.get<any[]>(`/restaurants/${id}/photos`),
+  });
   const [activeDish, setActiveDish] = useState<any | null>(null);
 
   const r = restaurant as any;
   const categories = (menu as any[]) ?? [];
+  const gallery = (photos as any[]) ?? [];
 
   return (
     <div className="space-y-6">
+      {r?.coverImageUrl && (
+        <div className="rounded-2xl overflow-hidden h-48 sm:h-64" style={{ background: "var(--qb-elevated)" }}>
+          <img src={resolveUrl(r.coverImageUrl) ?? ""} alt={r.name} className="w-full h-full object-cover" />
+        </div>
+      )}
+
       {r && (
         <div className="glass-card p-5">
           <h1 className="text-2xl font-bold">{r.name}</h1>
@@ -34,6 +50,20 @@ export default function RestaurantMenuPage() {
             <span>{r.deliveryRadiusKm}km radius</span>
             {r.fssaiLicense && <span>FSSAI {r.fssaiLicense}</span>}
           </div>
+        </div>
+      )}
+
+      {gallery.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {gallery.map((photo) => (
+            <div
+              key={photo.id}
+              className="shrink-0 w-24 h-24 rounded-xl overflow-hidden"
+              style={{ background: "var(--qb-elevated)" }}
+            >
+              <img src={resolveUrl(photo.url) ?? ""} alt={r?.name ?? "Restaurant"} className="w-full h-full object-cover" />
+            </div>
+          ))}
         </div>
       )}
 
@@ -54,7 +84,19 @@ export default function RestaurantMenuPage() {
           <h2 className="text-lg font-bold mb-3">{category.name}</h2>
           <div className="space-y-3">
             {category.dishes.map((dish: any) => (
-              <div key={dish.id} className="glass-card p-4 flex items-center justify-between gap-4">
+              <div key={dish.id} className="glass-card p-4 flex items-center gap-4">
+                {dish.imageUrl && (
+                  <div
+                    className="w-16 h-16 rounded-xl overflow-hidden shrink-0"
+                    style={{ background: "var(--qb-elevated)" }}
+                  >
+                    <img
+                      src={resolveUrl(dish.imageUrl) ?? ""}
+                      alt={dish.name}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                )}
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
                     <span
@@ -72,20 +114,23 @@ export default function RestaurantMenuPage() {
                     </span>
                     <span className="font-semibold">{dish.name}</span>
                     {!dish.isInStock && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-500">
+                      <span
+                        className="text-[10px] px-2 py-0.5 rounded-full"
+                        style={{ background: "rgba(140, 47, 47, 0.16)", color: "var(--qb-error)" }}
+                      >
                         Out of stock
                       </span>
                     )}
                   </div>
                   <p className="text-sm opacity-70 mb-1">{dish.description}</p>
                   <div className="text-sm">
-                    {dish.discountPrice ? (
+                    {!dish.customerPrice && dish.discountPrice ? (
                       <>
-                        <span className="font-bold">₹{dish.discountPrice}</span>{" "}
+                        <span className="font-bold">₹{dish.sellingPrice}</span>{" "}
                         <span className="line-through opacity-50 text-xs">₹{dish.price}</span>
                       </>
                     ) : (
-                      <span className="font-bold">₹{dish.price}</span>
+                      <span className="font-bold">₹{dish.sellingPrice}</span>
                     )}
                     {dish.calories && <span className="opacity-50 text-xs"> · {dish.calories} cal</span>}
                     {dish.addonGroups?.length > 0 && (
@@ -101,11 +146,11 @@ export default function RestaurantMenuPage() {
                       : useCartStore.getState().addItem(id, r?.name ?? "", {
                           dishId: dish.id,
                           name: dish.name,
-                          unitPrice: dish.discountPrice ?? dish.price,
+                          unitPrice: dish.sellingPrice,
                           addons: [],
                         })
                   }
-                  className="portal-btn-primary px-4 py-2 text-sm disabled:opacity-30"
+                  className="qb-btn-cta px-4 py-2 text-sm disabled:opacity-30"
                 >
                   + ADD
                 </button>
@@ -155,13 +200,13 @@ function AddonModal({
   const chosenAddons = dish.addonGroups.flatMap((g: any) =>
     (selected[g.id] ?? []).map((addonId) => g.addons.find((a: any) => a.id === addonId)),
   );
-  const total = (dish.discountPrice ?? dish.price) + chosenAddons.reduce((s: number, a: any) => s + a.price, 0);
+  const total = dish.sellingPrice + chosenAddons.reduce((s: number, a: any) => s + a.price, 0);
 
   function addToCart() {
     useCartStore.getState().addItem(restaurantId, restaurantName, {
       dishId: dish.id,
       name: dish.name,
-      unitPrice: dish.discountPrice ?? dish.price,
+      unitPrice: dish.sellingPrice,
       addons: chosenAddons.map((a: any) => ({ addonId: a.id, name: a.name, price: a.price })),
       specialInstructions: instructions || undefined,
     });
@@ -214,7 +259,7 @@ function AddonModal({
           <button onClick={onClose} className="text-sm opacity-70">
             Cancel
           </button>
-          <button onClick={addToCart} className="portal-btn-primary px-5 py-2 text-sm">
+          <button onClick={addToCart} className="qb-btn-cta px-5 py-2 text-sm">
             Add · ₹{total}
           </button>
         </div>
